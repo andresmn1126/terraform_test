@@ -1,5 +1,4 @@
 provider "azurerm" {
-    version = ">=2.0.0"
     features {}
 }
 
@@ -14,30 +13,30 @@ resource "azurerm_resource_group" "rg" {
 
 # Create storage accounts and image file share
 resource "azurerm_storage_account" "sadata" {
-    name = "cds${crownid}data"
+    name = "cds${var.crownid}data"
     resource_group_name = azurerm_resource_group.rg.name
     location = var.location
-    account_tier = "StandardV2"
+    account_tier = "Standard"
     account_replication_type = "GRS"
 }
 
-resource "azure_storage_account" "sadiag" {
-    name = "cds${crownid}datadiag"
+resource "azurerm_storage_account" "sadiag" {
+    name = "cds${var.crownid}datadiag"
     resource_group_name = azurerm_resource_group.rg.name
     location = var.location
-    account_tier = "StandardV2"
+    account_tier = "Standard"
     account_replication_type = "LRS"
 }
 
 resource "azurerm_storage_share" "share" {
-    name = "cds${crownid}data"
-    azure_storage_account = azurerm_storage_account.sadata.name
-    quote = 500
+    name = "cds${var.crownid}data"
+    storage_account_name = azurerm_storage_account.sadata.name
+    quota = 500
 }
 
 # Creates the virtual network
 resource "azurerm_virtual_network" "vnet" {
-    name = "${crownid}-VNET"
+    name = "${var.crownid}-VNET"
     # [] represent a list
     address_space = ["10.0.0.0/16"]
     location = var.location
@@ -46,7 +45,7 @@ resource "azurerm_virtual_network" "vnet" {
 
 # Creates the virtual subnet for the VM
 resource "azurerm_subnet" "subnet" {
-    name = "${crownid}-Subnet"
+    name = "${var.crownid}-Subnet"
     resource_group_name = azurerm_resource_group.rg.name
     virtual_network_name = azurerm_virtual_network.vnet.name
     address_prefixes = ["10.0.1.0/24"]
@@ -54,7 +53,7 @@ resource "azurerm_subnet" "subnet" {
 
 # Create 2 public IP
 resource "azurerm_public_ip" "publicip" {
-    name = "${crownid}-IP-${count.index}"
+    name = "${var.crownid}-IP-${count.index}"
     location = var.location
     resource_group_name = azurerm_resource_group.rg.name
     allocation_method = "Static"
@@ -64,7 +63,7 @@ resource "azurerm_public_ip" "publicip" {
 # Create security group and rules
 
 resource "azurerm_network_security_group" "nsg" {
-    name = "${crownid}-NSG"
+    name = "${var.crownid}-NSG"
     location = var.location
     resource_group_name = azurerm_resource_group.rg.name
 
@@ -94,16 +93,16 @@ resource "azurerm_network_interface" "vnic" {
     }
 }
 
-resource "azurerm_network_interface_security_group_association" "sga" {
-    network_interface_id   = azurerm_network_interface.vnic[*].index
-    network_security_group = azurerm_network_security_group.nsg.id
-}
+#resource "azurerm_network_interface_security_group_association" "sga" {
+#    network_interface_id   = azurerm_network_interface.vnic.*.id
+#    network_security_group_id = azurerm_network_security_group.nsg.id
+#}
 
 resource "azurerm_windows_virtual_machine" "rdpvm" {
-    name = "cds-${crownid}-rdp"
+    name = "cds-${var.crownid}-rdp"
     resource_group_name = azurerm_resource_group.rg.name
     location = var.location
-    size = "Standard_D2s_v2"
+    size = "Standard_B1ms"
     admin_username = var.admin_username
     admin_password = var.admin_password
     network_interface_ids = [
@@ -124,20 +123,20 @@ resource "azurerm_windows_virtual_machine" "rdpvm" {
 
 # https://docs.microsoft.com/en-us/azure/developer/terraform/create-linux-virtual-machine-with-infrastructure
     boot_diagnostics {
-        azurerm_storage_account = azurerm_storage_account.sadiag.primary_blob_endpoint
+        storage_account_uri = azurerm_storage_account.sadiag.primary_blob_endpoint
     }
 
 }
 
 resource "azurerm_windows_virtual_machine" "appvm" {
-    name = "cds-${crownid}-app"
+    name = "cds-${var.crownid}-app"
     resource_group_name = azurerm_resource_group.rg.name
     location = var.location
-    size = "Standard_D2s_v2"
+    size = "Standard_B1ms"
     admin_username = var.admin_username
     admin_password = var.admin_password
     network_interface_ids = [
-        azurerm_network_interface.vnic[0].id
+        azurerm_network_interface.vnic[1].id
     ]
     
     os_disk {
@@ -153,7 +152,7 @@ resource "azurerm_windows_virtual_machine" "appvm" {
     }
 
     boot_diagnostics {
-        azurerm_storage_account = azurerm_storage_account.sadiag.primary_blob_endpoint
+        storage_account_uri = azurerm_storage_account.sadiag.primary_blob_endpoint
     }
 
 }
