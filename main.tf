@@ -12,25 +12,19 @@ resource "azurerm_resource_group" "rg" {
 }
 
 # Create storage accounts and image file share
-resource "azurerm_storage_account" "sadata" {
-    name = "cds${var.crownid}data"
-    resource_group_name = azurerm_resource_group.rg.name
-    location = var.location
-    account_tier = "Standard"
-    account_replication_type = "GRS"
-}
+resource "azurerm_storage_account" "sa" {
+    for_each = local.storage_accounts
 
-resource "azurerm_storage_account" "sadiag" {
-    name = "cds${var.crownid}datadiag"
+    name = each.value.name
     resource_group_name = azurerm_resource_group.rg.name
     location = var.location
     account_tier = "Standard"
-    account_replication_type = "LRS"
+    account_replication_type = each.value.replication_type
 }
 
 resource "azurerm_storage_share" "share" {
     name = "cds${var.crownid}data"
-    storage_account_name = azurerm_storage_account.sadata.name
+    storage_account_name = azurerm_storage_account.sa["data"].name
     quota = 500
 }
 
@@ -53,11 +47,12 @@ resource "azurerm_subnet" "subnet" {
 
 # Create 2 public IP
 resource "azurerm_public_ip" "publicip" {
-    name = "${var.crownid}-IP-${count.index}"
+    for_each = local.customer_vms
+
+    name = "${each.value.name}-publicIP"
     location = var.location
     resource_group_name = azurerm_resource_group.rg.name
     allocation_method = "Static"
-    count = 2
 }
 
 # Create security group and rules
@@ -81,15 +76,16 @@ resource "azurerm_network_security_group" "nsg" {
 }
  
 resource "azurerm_network_interface" "vnic" {
-    name = "NIC${count.index}"
+    for_each = local.customer_vms
+
+    name = "${each.value.name}-nic"
     location = var.location
     resource_group_name = azurerm_resource_group.rg.name
-    count = 2
     ip_configuration {
-        name = "vNIC${count.index}"
+        name = "${each.value.name}-nic"
         subnet_id = azurerm_subnet.subnet.id
         private_ip_address_allocation = "dynamic"
-        public_ip_address_id = azurerm_public_ip.publicip[count.index].id
+        public_ip_address_id = azurerm_public_ip.publicip[each.key].id
     }
 }
 
@@ -98,50 +94,22 @@ resource "azurerm_network_interface" "vnic" {
 #    network_security_group_id = azurerm_network_security_group.nsg.id
 #}
 
-resource "azurerm_windows_virtual_machine" "rdpvm" {
-    name = "cds-${var.crownid}-rdp"
+resource "azurerm_windows_virtual_machine" "vms" {
+    for_each = local.customer_vms
+
+    name = each.value.name
     resource_group_name = azurerm_resource_group.rg.name
     location = var.location
-    size = "Standard_B1ms"
+    size = each.value.size
     admin_username = var.admin_username
     admin_password = var.admin_password
     network_interface_ids = [
-        azurerm_network_interface.vnic[0].id
+        azurerm_network_interface.vnic[each.key].id
     ]
     
     os_disk {
         caching = "ReadWrite"
-        storage_account_type = "Standard_LRS"
-    }
-
-    source_image_reference {
-        publisher = "MicrosoftWindowsServer"
-        offer     = "WindowsServer"
-        sku       = "2019-Datacenter"
-        version   = "latest"
-    }
-
-# https://docs.microsoft.com/en-us/azure/developer/terraform/create-linux-virtual-machine-with-infrastructure
-    boot_diagnostics {
-        storage_account_uri = azurerm_storage_account.sadiag.primary_blob_endpoint
-    }
-
-}
-
-resource "azurerm_windows_virtual_machine" "appvm" {
-    name = "cds-${var.crownid}-app"
-    resource_group_name = azurerm_resource_group.rg.name
-    location = var.location
-    size = "Standard_B1ms"
-    admin_username = var.admin_username
-    admin_password = var.admin_password
-    network_interface_ids = [
-        azurerm_network_interface.vnic[1].id
-    ]
-    
-    os_disk {
-        caching = "ReadWrite"
-        storage_account_type = "Standard_LRS"
+        storage_account_type = each.value.storage_type
     }
 
     source_image_reference {
@@ -152,7 +120,6 @@ resource "azurerm_windows_virtual_machine" "appvm" {
     }
 
     boot_diagnostics {
-        storage_account_uri = azurerm_storage_account.sadiag.primary_blob_endpoint
+        storage_account_uri = azurerm_storage_account.sa["datadiag"].primary_blob_endpoint
     }
-
 }
