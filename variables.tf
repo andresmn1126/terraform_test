@@ -8,6 +8,11 @@ variable "location" {
     default = "Eastus"
 }
 
+variable "timezone" {
+    type = string
+    default = "America/New_York"
+}
+
 variable "admin_username" {}
 
 variable "admin_password" {}

@@ -5,10 +5,6 @@ provider "azurerm" {
 resource "azurerm_resource_group" "rg" {
     name = "Testing-RG"
     location = var.location
-
-    tags = {
-        Environemt = "Managed by Terraform"
-    }
 }
 
 # Create storage accounts and image file share
@@ -122,4 +118,47 @@ resource "azurerm_windows_virtual_machine" "vms" {
     boot_diagnostics {
         storage_account_uri = azurerm_storage_account.sa["datadiag"].primary_blob_endpoint
     }
+}
+
+resource "azurerm_recovery_services_vault" "vault" {
+    name = "cds-${var.crownid}-vault"
+    location = var.location
+    resource_group_name = azurerm_resource_group.rg.name
+    sku = "Standard"
+}
+
+resource "azurerm_backup_policy_vm" "backup_policy" {
+    name = "StandardPolicy"
+    resource_group_name = azurerm_resource_group.rg.name
+    recovery_vault_name = azurerm_recovery_services_vault.vault.name
+    timezone = var.timezone
+
+    backup {
+        frequency = "Daily"
+        time = "02:00"
+    }
+
+    retention_daily {
+        count = 14
+    }
+
+    retention_weekly {
+        count = 8
+        weekdays = ["Sunday"]
+    }
+
+    retention_monthly {
+        count = 12
+        weekdays = ["Sunday"]
+        weeks = ["First"]
+    }
+}
+
+resource "azurerm_backup_protected_vm" "vmbackup" {
+    for_each = local.customer_vms
+
+    resource_group_name = azurerm_resource_group.rg.name
+    recovery_vault_name = azurerm_recovery_services_vault.vault.name
+    source_vm_id = azurerm_windows_virtual_machine.vms[each.key].id
+    backup_policy_id = azurerm_backup_policy_vm.backup_policy.id
 }
